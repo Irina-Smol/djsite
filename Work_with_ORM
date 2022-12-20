@@ -1,0 +1,129 @@
+---НАЧАЛО РАБОТЫ С ORM---
+python manage.py shell           в терминале и запуск оболочки Django
+from women.models import *       импорт моделей
+Women.objects.all()              выборка всех записей из таблицы women
+Women.objects.all()[:5]          Получить первые пять записей
+Women.objects.all()[3:8]         делается отбор на уровне SQL-запросов, что очень эффективно (записи с 4 по 8)
+
+---МЕТОДЫ СОРТИРОВКИ---
+Women.objects.order_by('pk')    отсортировать записи по определенному полю
+Women.objects.order_by('-pk')   символ минус перед именем поля означает обратный порядок сортировки
+Women.objects.all().reverse()   порядок (на противоположный) можно менять с помощью метода reverse()
+
+---СПИСОК ЗАПИСЕЙ ПО ВЫБОРУ---
+Women.objects.filter(pk__lte=2)   записи, в которых pk <= 2
+Women.objects.get(pk=2)           метод get() для получения строго одной записи
+
+---ОБРАБОТКА ДАННЫХ СВЯЗАННЫХ ТАБЛИЦ---
+
+доступны следующие свойства:
+w.title, …, w. is_published – значения полей записи таблицы women;
+w.pk, w.id – идентификаторы записи (первичный ключ);
+w.cat_id – идентификатор рубрики (внешний ключ);
+w.cat – объект класса Category, хранящий данные записи с id = cat_id.
+
+w = Women.objects.get(pk=1)       
+w.cat                         cat – это действительно ссылка на экземпляр класса Category
+w.cat.name                    для получения связанных данных о категории
+
+---ЗАПРОСЫ С ИСПОЛЬЗОВАНИЕМ ВТОРИЧНОЙ МОДЕЛИ (_set)---
+c = Category.objects.get(pk=1)         Сначала прочитаем запись из таблицы category
+c.women_set.all()                      прочитаем все связанные с данной категорией посты
+c.get_posts.filter(is_published=True)   показать записи, которые опубликованы
+
+---ФИЛЬТРЫ ПОЛЕЙ (lookups)---
+Women.objects.filter(pk__gt=2)         для выборки записей с идентификатором больше 2
+Women.objects.filter(title__contains='ли')      находить строки по их фрагменту, учитывая регистр букв 
+                                                 выдаст список всех женщин, в заголовке у которых присутствует фрагмент «ли»
+Women.objects.filter(title__icontains='ЛИ')     фильтр icontains осуществляет поиск без учета регистра символов, НО получим пустой список, т.к.:
+
+СУБД SQLite не поддерживает регистронезависимый поиск для русских символов (вообще, для всех не ASCII-символов), поэтому получаем пустой список. 
+Другие СУБД, как правило, отрабатывают все это корректно. 
+В случае с латинскими символами в SQLite поиск всегда проходит как регистронезависимый.
+
+Women.objects.filter(pk__in=[2,5,11,12])     фильтр in позволяет указывать через список выбираемые записи по значениям (выбор записи с id равными 2, 5, 11, 12)
+Women.objects.filter(pk__in=[2,5,11,12], is_published=True)      Если по условию нужно отработать сразу несколько фильтров, то они указываются через запятую
+Women.objects.filter(cat__in=[1, 2])                     можно использовать фильтр in и для внешнего ключа
+cats = Category.objects.all()             вместо указания конкретных id записей категорий, можно вначале прочитать нужные рубрики 
+Women.objects.filter(cat__in=cats)        подставить их вместо списка
+
+---ИСПОЛЬЗОВАНИЕ КЛАССА Q: И, ИЛИ, НЕ---
+специальные операторы:
+& - логическое И (приоритет 2);
+| - логическое ИЛИ (приоритет 3);
+~ - логическое НЕ (приоритет 1).
+
+from django.db.models import Q         импорт
+Women.objects.filter(pk__lt=5, cat_id=2)   первичный ключ <= 5, рубрика = 2
+Women.objects.filter(Q(pk__lt=5) | Q(cat_id=2))     id<5 или cat_id=2
+Women.objects.filter(Q(pk__lt=5) & Q(cat_id=2))     
+Women.objects.filter(~Q(pk__lt=5) | Q(cat_id=2))    если перед классом прописать тильду, то условие превратится в обратное
+
+---БЫСТРОЕ ПОЛУЧЕНИЕ ЗАПИСИ ИЗ ТАБЛИЦЫ---
+Women.objects.first()        зять первую запись из выборки
+Women.objects.order_by('pk').first()        выбирать разные записи
+Women.objects.order_by('-pk').first()
+Women.objects.order_by('pk').last()        для выбора последней записи из набора
+Women.objects.filter(pk__gt=5).last()
+
+---ПОЛУЧЕНИЕ ЗАПИСИ ПО ДАТЕ, методы latest и earliest---
+latest() – выбор записи с самой поздней датой (наибольшей);
+earliest() – выбор записи с самой ранней датой (наименьшей).
+
+Women.objects.earliest('time_update')    самая ранняя запись
+Women.objects.latest('time_update')      самая поздняя
+
+Women.objects.order_by('title').earliest('time_update') сделана выборка с сортировкой по какому-либо другому полю (не time_update) 
+                                                             и из этой выборки нужно получить самую раннюю или самую позднюю запись
+
+
+---ВЫБОР ЗАПИСИ ОТНОСИТЕЛЬНО ТЕКУЩЕЙ (ПО ДАТЕ)---
+Если нужно выбрать предыдущую или следующую запись относительно текущей, то в ORM для этого существует два специальных метода, 
+которые выбирают записи опять же по указанному полю с датой и временем
+w = Women.objects.get(pk=7)      
+w.get_previous_by_time_update()       для получения предыдущей записи относительно текущей
+
+time_update – это название поля, по которому определяется предыдущая запись
+
+w.get_next_by_time_update()        для получения следующей записи относительно текущей
+w.get_next_by_time_update(pk__gt=10)        можно указывать условия выборки следующей или предыдущей записи(выбирается следующая запись с id больше 10)
+
+
+---МЕТОДЫ exists и count---
+В ORM Django имеются два весьма полезных метода с высокой скоростью исполнения:
+exists() – проверка существования записи;
+count() – получение числа записей.
+
+Если добавить новую категорию(pk=10) и обратиться к ней:
+c3 = Category.objects.get(pk=10)
+c3.women_set.exists()                   False
+
+c2 = Category.objects.get(pk=2)
+c2.women_set.exists()                   True
+
+c2.women_set.count()          получить число записей
+Women.objects.filter(pk__gt=4).count()
+
+
+---ВЫБОРКА ЗАПИСЕЙ ПО ПОЛЯМ СВЯЗАННЫХ МОДЕЛЕЙ---
+Women.objects.filter(cat__slug='aktrisy')       все записи из модели Women для определенной категории, используя слаг
+Women.objects.filter(cat__in=[1])               
+Women.objects.filter(cat__name='Певицы')
+Women.objects.filter(cat__name__contains='ы')     выберем записи, у которых имя категории содержит букву ‘ы’
+Women.objects.filter(cat__name__contains='цы')
+Category.objects.filter(women__title__contains='ли') выбрать все категории, которые связаны с записями вторичной модели Women, 
+                                                       содержащие в заголовке фрагмент строки «ли»
+Category.objects.filter(women__title__contains='ли').distinct()      отобрать только уникальные записи (категории) 
+
+---АГРЕГИРУЮЩИЕ ФУНКЦИИ---
+Women.objects.count()        число записей в таблице women
+Women.objects.aggregate(Min('cat_id'))     агрегирующие команды обычно прописываются в специальном методе aggregate()
+нужно их импортировать
+from django.db.models import *
+Women.objects.aggregate(Min('cat_id'), Max('cat_id'))
+Women.objects.aggregate(cat_min=Min('cat_id'), cat_max=Max('cat_id'))         Если по каким-либо причинам стандартные ключи нам не подходят
+Women.objects.aggregate(res=Sum('cat_id') - Count('cat_id'))       С агрегирующими значениями можно выполнять различные математические операции
+Women.objects.aggregate(res=Avg('cat_id'))
+Women.objects.filter(pk__gt=4).aggregate(res=Avg('cat_id'))    агрегация выполняется не для всех записей, а только для тех, у которых id больше 4
+
+
